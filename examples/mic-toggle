@@ -1,0 +1,36 @@
+#!/bin/sh
+# Toggle the system microphone (input volume) between 0 and the last non-zero level.
+# Shows a visual cue in the notch via `atoll-indicator` (atoll-indicator) when available.
+
+STATE_DIR="$HOME/.local/state/mic-toggle"
+LAST_VOL_FILE="$STATE_DIR/last-volume"
+mkdir -p "$STATE_DIR"
+
+ATOLL_INDICATOR="$HOME/.local/bin/atoll-indicator"
+
+current=$(osascript -e 'input volume of (get volume settings)')
+
+if [ "$current" -eq 0 ]; then
+    last=$(cat "$LAST_VOL_FILE" 2>/dev/null)
+    case "$last" in
+        ''|*[!0-9]*) last=80 ;;
+    esac
+    [ "$last" -gt 0 ] || last=80
+    osascript -e "set volume input volume $last"
+    if [ -x "$ATOLL_INDICATOR" ]; then
+        "$ATOLL_INDICATOR" clear --id mic-muted
+        "$ATOLL_INDICATOR" flash --icon mic.fill --color green --title "Mic live"
+    else
+        afplay -t 0.3 /System/Library/Sounds/Bottle.aiff &
+    fi
+else
+    echo "$current" > "$LAST_VOL_FILE"
+    osascript -e 'set volume input volume 0'
+    if [ -x "$ATOLL_INDICATOR" ]; then
+        # The icon appearing next to the notch is itself the cue; it stays
+        # there until unmute so the state can be checked at a glance.
+        "$ATOLL_INDICATOR" set --id mic-muted --icon mic.slash.fill --color red --title "Mic muted"
+    else
+        afplay -t 0.3 /System/Library/Sounds/Funk.aiff &
+    fi
+fi

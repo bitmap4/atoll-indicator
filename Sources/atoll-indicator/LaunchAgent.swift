@@ -12,21 +12,9 @@ enum LaunchAgentManager {
         NSString(string: "~/Library/Logs/atoll-indicator.log").expandingTildeInPath
     }
 
-    /// Real path of the running binary (resolving the ~/.local/bin symlink), so
-    /// launchd runs the copy inside AtollIndicator.app. Atoll identifies XPC clients via
-    /// LaunchServices, which requires the agent to run from an app bundle.
-    static var resolvedExecutablePath: String {
-        let raw = Bundle.main.executablePath ?? CommandLine.arguments[0]
-        return URL(fileURLWithPath: raw).resolvingSymlinksInPath().path
-    }
-
     static func install() throws {
-        let executable = resolvedExecutablePath
-        guard executable.contains(".app/Contents/MacOS/") else {
-            throw AtollIndicatorError.agentError(
-                "the atoll-indicator binary must live inside AtollIndicator.app for Atoll to accept it. Install with `make install` from the atoll-indicator repo."
-            )
-        }
+        let raw = Bundle.main.executablePath ?? CommandLine.arguments[0]
+        let executable = URL(fileURLWithPath: raw).resolvingSymlinksInPath().path
 
         let plist: [String: Any] = [
             "Label": label,

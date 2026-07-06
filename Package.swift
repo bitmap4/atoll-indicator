@@ -17,8 +17,7 @@ let package = Package(
                 .product(name: "AtollExtensionKit", package: "AtollExtensionKit"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
-            path: "Sources/atoll-indicator",
-            exclude: ["Info.plist"]
+            path: "Sources/atoll-indicator"
         )
     ]
 )

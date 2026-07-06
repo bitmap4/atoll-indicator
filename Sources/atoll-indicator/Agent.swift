@@ -4,13 +4,17 @@ import Foundation
 /// Process-lifetime reference to the agent, created lazily on the main actor.
 @MainActor let runningAgent = AtollIndicatorAgent()
 
-/// The resident process that owns the XPC connection to Atoll and reacts to
-/// commands posted by the `atoll-indicator` CLI. It does no polling: it sits idle on the
-/// run loop until a distributed notification arrives.
+/// The resident process that talks to Atoll and reacts to commands posted by
+/// the `atoll-indicator` CLI. It does no polling: it sits idle on the run loop
+/// until a distributed notification arrives.
+///
+/// Communication with Atoll uses its JSON-RPC WebSocket server on
+/// localhost:9020. Atoll also offers an XPC service, but registering its mach
+/// service name does not work on current macOS, so RPC is the reliable path.
 @MainActor
 final class AtollIndicatorAgent {
-    private let client = AtollClient.shared
-    private let bundleIdentifier = Bundle.main.bundleIdentifier ?? "com.github.bitmap4.atoll-indicator"
+    private let rpc = AtollRPCClient()
+    private let bundleIdentifier = "com.github.bitmap4.atoll-indicator"
 
     /// Persistent cues currently presented, by cue id.
     private var persistentCues: [String: SetSpec] = [:]
@@ -18,16 +22,11 @@ final class AtollIndicatorAgent {
     /// Generation counter so overlapping flashes don't dismiss each other early.
     private var flashGeneration = 0
 
+    private var resyncTask: Task<Void, Never>?
+
     private static let flashActivityID = "atoll-indicator.flash"
 
     func start() async {
-        guard client.isAtollInstalled else {
-            log("Atoll is not installed (https://github.com/Ebullioscopic/Atoll). Exiting.")
-            exit(1)
-        }
-
-        // Listen for commands first: the authorization request below can stay
-        // pending until the user approves the prompt inside Atoll.
         DistributedNotificationCenter.default().addObserver(
             forName: IPC.commandNotification,
             object: nil,
@@ -43,21 +42,64 @@ final class AtollIndicatorAgent {
             }
         }
 
-        client.onAuthorizationChange { isAuthorized in
-            log("Atoll authorization changed: \(isAuthorized)")
+        rpc.onActivityDismiss = { [weak self] activityID in
+            guard let self else { return }
+            if let cueID = self.persistentCues.keys.first(where: { Self.cueActivityID($0) == activityID }) {
+                self.persistentCues.removeValue(forKey: cueID)
+                log("Cue '\(cueID)' dismissed from Atoll.")
+            }
+        }
+
+        // If Atoll quits or restarts, its activities are gone; re-present our
+        // persistent cues once it comes back.
+        rpc.onDisconnect = { [weak self] in
+            self?.scheduleResync()
         }
 
         log("Agent running (pid \(ProcessInfo.processInfo.processIdentifier)). Waiting for cues.")
 
         do {
-            let authorized = try await client.requestAuthorization()
-            if authorized {
-                log("Authorized with Atoll.")
-            } else {
-                log("Not authorized. Approve 'AtollIndicator' in Atoll → Settings → Extensions, then cues will start working.")
-            }
+            let version = try await rpc.call("atoll.getVersion")
+            try await authorize()
+            log("Connected to Atoll \(version["version"] as? String ?? "?") and authorized.")
         } catch {
-            log("Could not reach Atoll for authorization: \(error). Will retry on first cue.")
+            log("Atoll not reachable yet (\(error)). Will retry when it appears.")
+            scheduleResync()
+        }
+    }
+
+    private func authorize() async throws {
+        let result = try await rpc.call(
+            "atoll.requestAuthorization",
+            params: ["bundleIdentifier": bundleIdentifier, "appName": "Atoll Indicator"]
+        )
+        guard result["authorized"] as? Bool == true else {
+            throw AtollRPCClient.RPCError.server(
+                code: -1,
+                message: "not authorized: enable 'Atoll Indicator' in Atoll > Settings > Extensions"
+            )
+        }
+    }
+
+    /// Retries the Atoll connection every few seconds (only while disconnected)
+    /// and restores persistent cues once it succeeds.
+    private func scheduleResync() {
+        guard resyncTask == nil else { return }
+        resyncTask = Task { @MainActor in
+            defer { resyncTask = nil }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                do {
+                    try await authorize()
+                    for spec in persistentCues.values {
+                        try? await presentOrUpdate(descriptor: descriptor(for: spec), isUpdate: false)
+                    }
+                    log("Reconnected to Atoll; restored \(persistentCues.count) cue(s).")
+                    return
+                } catch {
+                    continue
+                }
+            }
         }
     }
 
@@ -87,7 +129,7 @@ final class AtollIndicatorAgent {
                 reply(to: command, ok: true, message: ids.isEmpty ? "(no persistent cues)" : ids)
             }
         } catch {
-            reply(to: command, ok: false, message: friendlyMessage(for: error))
+            reply(to: command, ok: false, message: String(describing: error))
         }
     }
 
@@ -101,7 +143,7 @@ final class AtollIndicatorAgent {
             id: Self.flashActivityID,
             bundleIdentifier: bundleIdentifier,
             priority: .high,
-            title: spec.title ?? "AtollIndicator",
+            title: spec.title ?? "Indicator",
             subtitle: spec.subtitle,
             leadingIcon: .symbol(name: spec.icon, size: 16, weight: .semibold),
             trailingContent: .none,
@@ -114,28 +156,42 @@ final class AtollIndicatorAgent {
             sneakPeekSubtitle: spec.subtitle
         )
 
-        // Re-presenting with the same id replaces the previous flash smoothly.
-        do {
-            try await client.presentLiveActivity(descriptor)
-        } catch {
-            try await client.updateLiveActivity(descriptor)
-        }
+        try await authorize()
+        try await presentOrUpdate(descriptor: descriptor, isUpdate: false)
 
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(spec.duration * 1_000_000_000))
             guard generation == self.flashGeneration else { return }
-            try? await self.client.dismissLiveActivity(activityID: Self.flashActivityID)
+            _ = try? await self.rpc.call(
+                "atoll.dismissLiveActivity",
+                params: ["activityID": Self.flashActivityID, "bundleIdentifier": self.bundleIdentifier]
+            )
         }
     }
 
     private func set(_ spec: SetSpec) async throws {
-        let activityID = Self.cueActivityID(spec.id)
+        try await authorize()
+        try await presentOrUpdate(
+            descriptor: descriptor(for: spec),
+            isUpdate: persistentCues[spec.id] != nil
+        )
+        persistentCues[spec.id] = spec
+    }
 
-        let descriptor = AtollLiveActivityDescriptor(
-            id: activityID,
+    private func clear(id: String) async throws {
+        guard persistentCues.removeValue(forKey: id) != nil else { return }
+        _ = try await rpc.call(
+            "atoll.dismissLiveActivity",
+            params: ["activityID": Self.cueActivityID(id), "bundleIdentifier": bundleIdentifier]
+        )
+    }
+
+    private func descriptor(for spec: SetSpec) -> AtollLiveActivityDescriptor {
+        AtollLiveActivityDescriptor(
+            id: Self.cueActivityID(spec.id),
             bundleIdentifier: bundleIdentifier,
             priority: .normal,
-            title: spec.title ?? "AtollIndicator",
+            title: spec.title ?? "Indicator",
             subtitle: spec.subtitle,
             leadingIcon: .symbol(name: spec.icon, size: 16, weight: .semibold),
             trailingContent: .none,
@@ -147,24 +203,25 @@ final class AtollIndicatorAgent {
             sneakPeekTitle: spec.title,
             sneakPeekSubtitle: spec.subtitle
         )
-
-        if persistentCues[spec.id] != nil {
-            try await client.updateLiveActivity(descriptor)
-        } else {
-            try await client.presentLiveActivity(descriptor)
-            client.onActivityDismiss(activityID: activityID) { [weak self] in
-                Task { @MainActor in
-                    self?.persistentCues.removeValue(forKey: spec.id)
-                    log("Cue '\(spec.id)' dismissed from Atoll.")
-                }
-            }
-        }
-        persistentCues[spec.id] = spec
     }
 
-    private func clear(id: String) async throws {
-        guard persistentCues.removeValue(forKey: id) != nil else { return }
-        try await client.dismissLiveActivity(activityID: Self.cueActivityID(id))
+    private func presentOrUpdate(descriptor: AtollLiveActivityDescriptor, isUpdate: Bool) async throws {
+        let json = try descriptorJSON(descriptor)
+        let method = isUpdate ? "atoll.updateLiveActivity" : "atoll.presentLiveActivity"
+        do {
+            _ = try await rpc.call(method, params: ["descriptor": json, "bundleIdentifier": bundleIdentifier])
+        } catch {
+            // Present may fail if the id already exists (or vice versa); try the other verb.
+            let fallback = isUpdate ? "atoll.presentLiveActivity" : "atoll.updateLiveActivity"
+            _ = try await rpc.call(fallback, params: ["descriptor": json, "bundleIdentifier": bundleIdentifier])
+        }
+    }
+
+    /// Encodes an AtollExtensionKit descriptor into the JSON object shape that
+    /// Atoll's RPC endpoint decodes (identical to the XPC wire format).
+    private func descriptorJSON(_ descriptor: AtollLiveActivityDescriptor) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(descriptor)
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
     }
 
     private static func cueActivityID(_ id: String) -> String {
@@ -187,22 +244,6 @@ final class AtollIndicatorAgent {
             userInfo: [IPC.payloadKey: json],
             deliverImmediately: true
         )
-    }
-
-    private func friendlyMessage(for error: Error) -> String {
-        if let atollError = error as? AtollExtensionKitError {
-            switch atollError {
-            case .notAuthorized:
-                return "not authorized: approve 'AtollIndicator' in Atoll → Settings → Extensions"
-            case .atollNotInstalled:
-                return "Atoll is not installed"
-            case .serviceUnavailable:
-                return "Atoll is not running"
-            default:
-                return String(describing: atollError)
-            }
-        }
-        return String(describing: error)
     }
 }
 

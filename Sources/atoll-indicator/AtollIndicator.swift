@@ -1,4 +1,3 @@
-import AppKit
 import ArgumentParser
 import Foundation
 
@@ -8,10 +7,10 @@ struct AtollIndicator: ParsableCommand {
         commandName: "atoll-indicator",
         abstract: "Trigger visual cues in the notch via Atoll.",
         discussion: """
-            AtollIndicator turns anything that can run a shell command (hotkeys, scripts, \
-            other apps) into a source of visual cues rendered by Atoll: transient \
-            icon flashes next to the notch, and persistent state indicators shown \
-            when the notch is expanded.
+            atoll-indicator turns anything that can run a shell command (hotkeys, \
+            scripts, other apps) into a source of visual cues rendered by Atoll: \
+            transient icon flashes next to the notch, and persistent state \
+            indicators that stay next to the notch until cleared.
             """,
         version: "0.1.0",
         subcommands: [
@@ -41,15 +40,11 @@ extension AtollIndicator {
         )
 
         func run() throws {
-            // Atoll resolves XPC clients via NSRunningApplication, so the agent
-            // must register with LaunchServices as an app. Running NSApplication
-            // from inside AtollIndicator.app achieves that; LSUIElement in Info.plist
-            // keeps it out of the Dock.
-            let app = NSApplication.shared
             Task { @MainActor in
                 await runningAgent.start()
             }
-            app.run()
+            // Idle on the main run loop; work only happens when a command arrives.
+            RunLoop.main.run()
         }
     }
 
