@@ -2,7 +2,7 @@
 # Installer for atoll-indicator (https://github.com/bitmap4/atoll-indicator).
 # Downloads the latest release binary, or builds from source if that fails.
 #
-#   curl https://raw.githubusercontent.com/bitmap4/atoll-indicator/main/install.sh | sh
+#   curl https://bitmap4.github.io/atoll-indicator/install.sh | sh
 #
 # Installs to ~/.local/bin by default; override with PREFIX=/some/dir.
 set -eu

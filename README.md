@@ -3,6 +3,8 @@
 Show visual indicators in the Mac notch from the command line, via
 [Atoll](https://github.com/Ebullioscopic/Atoll).
 
+https://github.com/user-attachments/assets/a2277079-378d-4d4c-9976-0afca284bab5
+
 Anything that can run a shell command - a hotkey (Karabiner, skhd,
 BetterTouchTool), a script, a cron job, another app - can trigger an indicator:
 
@@ -31,11 +33,6 @@ atoll-indicator status
 Icons are [SF Symbols](https://developer.apple.com/sf-symbols/) names. Colors
 are names (`red`, `green`, ...), hex (`#ff5500`), or `accent`.
 
-## Demo
-
-<!-- Drop the video URL on its own line below; GitHub renders it as an embedded player. -->
-VIDEO-URL-PLACEHOLDER
-
 ## Requirements
 
 - macOS 13+
@@ -55,7 +52,7 @@ atoll-indicator install-agent
 Or with the install script (installs to `~/.local/bin` and sets up the agent):
 
 ```sh
-curl https://raw.githubusercontent.com/bitmap4/atoll-indicator/main/install.sh | sh
+curl https://bitmap4.github.io/atoll-indicator/install.sh | sh
 ```
 
 Or from source:
@@ -69,6 +66,20 @@ atoll-indicator install-agent
 
 `~/.local/bin` must be on your `PATH` (the Homebrew build installs to the
 usual brew prefix instead).
+
+### The launchd agent
+
+`atoll-indicator install-agent` registers a launchd login item
+(`~/Library/LaunchAgents/com.github.bitmap4.atoll-indicator.plist`) that keeps
+the background agent running: it starts at login and is relaunched if it ever
+exits. The agent is what holds the connection to Atoll; without it, `flash`,
+`set`, and the other commands report the agent as unreachable.
+
+- `atoll-indicator status` checks that the agent is up
+- `atoll-indicator uninstall-agent` stops it and removes the login item
+- agent logs go to `~/Library/Logs/atoll-indicator.log`
+- to run it in the foreground instead (for debugging), skip `install-agent`
+  and run `atoll-indicator agent`
 
 ## How it works
 
