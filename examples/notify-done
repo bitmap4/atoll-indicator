@@ -1,0 +1,26 @@
+#!/bin/sh
+# Run a command and flash an indicator in the notch when it finishes.
+#
+#   notify-done make build
+#   notify-done rsync -a big-dir/ backup:/big-dir/
+set -u
+
+if [ $# -eq 0 ]; then
+    echo "usage: notify-done <command> [args...]" >&2
+    exit 64
+fi
+
+INDICATOR=$(command -v atoll-indicator || echo "$HOME/.local/bin/atoll-indicator")
+
+"$@"
+status=$?
+
+if [ "$status" -eq 0 ]; then
+    "$INDICATOR" flash --icon checkmark.circle.fill --color green \
+        --title "$1 finished" --hud --duration 3
+else
+    "$INDICATOR" flash --icon xmark.circle.fill --color red \
+        --title "$1 failed (exit $status)" --hud --duration 5
+fi
+
+exit "$status"

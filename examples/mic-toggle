@@ -1,6 +1,6 @@
 #!/bin/sh
 # Toggle the system microphone (input volume) between 0 and the last non-zero level.
-# Shows a visual cue in the notch via `atoll-indicator` (atoll-indicator) when available.
+# Shows a visual cue in the notch via `atoll-indicator` when available.
 
 STATE_DIR="$HOME/.local/state/mic-toggle"
 LAST_VOL_FILE="$STATE_DIR/last-volume"

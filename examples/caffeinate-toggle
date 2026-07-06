@@ -1,0 +1,17 @@
+#!/bin/sh
+# Toggle sleep prevention (caffeinate) and pin a coffee cup in the notch
+# while it is active. Bind to a hotkey, or just run it from a terminal.
+set -u
+
+INDICATOR=$(command -v atoll-indicator || echo "$HOME/.local/bin/atoll-indicator")
+
+if pgrep -x caffeinate >/dev/null; then
+    pkill -x caffeinate
+    "$INDICATOR" clear --id caffeinate
+    "$INDICATOR" flash --icon cup.and.saucer --color gray --title "Sleep allowed"
+else
+    # -d keeps the display awake, -i the system; drop -d to allow display sleep.
+    caffeinate -di &
+    "$INDICATOR" set --id caffeinate --icon cup.and.saucer.fill --color orange \
+        --title "Caffeinated"
+fi

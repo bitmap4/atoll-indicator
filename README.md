@@ -100,7 +100,18 @@ re-authorizes and re-presents persistent indicators automatically.
 > name never appears in the launchd session, so XPC clients can't reach it.
 > The WebSocket RPC server exposes the same API and works everywhere.
 
-## Example: mute your mic with the F5 dictation key
+## Examples
+
+Ready-to-use scripts in [`examples/`](examples/):
+
+- [`mic-toggle`](examples/mic-toggle): mute/unmute the system mic with a
+  persistent indicator while muted (see below)
+- [`notify-done`](examples/notify-done): wrap any command and flash green or
+  red when it finishes, e.g. `notify-done make build`
+- [`caffeinate-toggle`](examples/caffeinate-toggle): toggle sleep prevention
+  with a coffee cup pinned in the notch while active
+
+### Mute your mic with the F5 dictation key
 
 [`examples/mic-toggle`](examples/mic-toggle) toggles the system input volume
 between 0 and its previous level, shows a persistent red `mic.slash.fill`
