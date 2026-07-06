@@ -1,0 +1,23 @@
+{
+  "pins" : [
+    {
+      "identity" : "atollextensionkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Ebullioscopic/AtollExtensionKit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "296562051f4ee8fec55aaca14782b21b8e63cafa"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
+      }
+    }
+  ],
+  "version" : 2
+}
