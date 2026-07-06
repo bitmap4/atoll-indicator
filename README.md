@@ -31,6 +31,11 @@ atoll-indicator status
 Icons are [SF Symbols](https://developer.apple.com/sf-symbols/) names. Colors
 are names (`red`, `green`, ...), hex (`#ff5500`), or `accent`.
 
+## Demo
+
+<!-- Drop the video URL on its own line below; GitHub renders it as an embedded player. -->
+VIDEO-URL-PLACEHOLDER
+
 ## Requirements
 
 - macOS 13+
@@ -40,6 +45,21 @@ are names (`red`, `green`, ...), hex (`#ff5500`), or `accent`.
 
 ## Install
 
+With Homebrew:
+
+```sh
+brew install bitmap4/tap/atoll-indicator
+atoll-indicator install-agent
+```
+
+Or with the install script (installs to `~/.local/bin` and sets up the agent):
+
+```sh
+curl https://raw.githubusercontent.com/bitmap4/atoll-indicator/main/install.sh | sh
+```
+
+Or from source:
+
 ```sh
 git clone https://github.com/bitmap4/atoll-indicator.git
 cd atoll-indicator
@@ -47,7 +67,8 @@ make install
 atoll-indicator install-agent
 ```
 
-`~/.local/bin` must be on your `PATH`.
+`~/.local/bin` must be on your `PATH` (the Homebrew build installs to the
+usual brew prefix instead).
 
 ## How it works
 
